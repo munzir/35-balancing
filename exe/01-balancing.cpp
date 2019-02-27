@@ -195,6 +195,10 @@ int main(int argc, char* argv[]) {
   size_t debug_iter = 0;
   double time = 0.0;
 
+  // Dump data here
+  std::ofstream out_file;
+  out_file.open("/usr/local/share/krang/balancing/out");
+
   // Send a message to event logger; set the event code and the priority
   somatic_d_event(&daemon_cx, SOMATIC__EVENT__PRIORITIES__NOTICE,
                   SOMATIC__EVENT__CODES__PROC_RUNNING, NULL, NULL);
@@ -237,6 +241,13 @@ int main(int argc, char* argv[]) {
       if (!success) break;
     }
 
+    // Data dump
+    out_file << time << " " << balance_control.get_state().transpose() << " "
+             << control_input[0] << " " << control_input[1] << " "
+             << balance_control.get_pd_gains().transpose() << " "
+             << robot->getMass() - 2 * robot->getBodyNode("LWheel")->getMass()
+             << " " << balance_control.get_com().transpose() << std::endl;
+
     // Print the mode
     if (debug) {
       std::cout << "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\n" << std::endl;
@@ -253,6 +264,7 @@ int main(int argc, char* argv[]) {
                   SOMATIC__EVENT__CODES__PROC_STOPPING, NULL, NULL);
 
   std::cout << "destroying" << std::endl;
+  out_file.close();
   delete krang;
   if (params.is_simulation_) {
     delete world_interface;
