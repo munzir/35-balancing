@@ -75,6 +75,9 @@ class BalanceControl {
   // constructor
   double ElapsedTimeSinceLastCall();
 
+  // Get body only com (without wheels) in world frame)
+  Eigen::Vector3d GetBodyCom(dart::dynamics::SkeletonPtr robot);
+
   // Reads the sensors of the robot and updates the state of the wheeled
   // inverted pendulum. Involves computation of the center of mass
   void UpdateState();
