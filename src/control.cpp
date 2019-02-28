@@ -156,12 +156,23 @@ double BalanceControl::ElapsedTimeSinceLastCall() {
 }
 
 //============================================================================
+Eigen::Vector3d BalanceControl::GetBodyCom(dart::dynamics::SkeletonPtr robot) {
+  dart::dynamics::BodyNodePtr lwheel = robot->getBodyNode("LWheel");
+  dart::dynamics::BodyNodePtr rwheel = robot->getBodyNode("RWheel");
+  double wheel_mass = lwheel->getMass();
+  double full_mass = robot->getMass();
+  return (full_mass * robot->getCOM() - wheel_mass * lwheel->getCOM() -
+          wheel_mass * rwheel->getCOM()) /
+         (full_mass - 2 * wheel_mass);
+}
+
+//============================================================================
 void BalanceControl::UpdateState() {
   // Read motor encoders, imu and ft and update dart skeleton
   krang_->updateSensors(dt_);
 
   // Calculate the COM Using Skeleton
-  com_ = robot_->getCOM() - robot_->getPositions().segment(3, 3);
+  com_ = GetBodyCom(robot_) - robot_->getPositions().segment(3, 3);
 
   // Update the state (note for amc we are reversing the effect of the motion of
   // the upper body) State are theta, dtheta, x, dx, psi, dpsi
@@ -175,7 +186,7 @@ void BalanceControl::UpdateState() {
 
   // Making adjustment in com to make it consistent with the hack above for
   // state(0)
-  com_(0) = com_(2) * tan(state_(0));
+  //com_(0) = com_(2) * tan(state_(0));
 }
 
 //============================================================================

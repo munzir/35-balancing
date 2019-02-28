@@ -164,13 +164,12 @@ int main(int argc, char* argv[]) {
                 Krang::Hardware::MODE_WAIST;
   Krang::Hardware*
       krang;  ///< Interface for the motor and sensors on the hardware
-  krang =
-      new Krang::Hardware((Krang::Hardware::Mode)hw_mode, &daemon_cx, robot);
+  // krang =
+  //    new Krang::Hardware((Krang::Hardware::Mode)hw_mode, &daemon_cx, robot);
   //    Akash made the following edits to add filter_imu option
-  // bool filter_imu = (params.is_simulation_ ? false : true);
-  // krang = new Krang::Hardware((Krang::Hardware::Mode)hw_mode, &daemon_cx,
-  // robot,
-  //                            filter_imu);
+  bool filter_imu = (params.is_simulation_ ? false : true);
+  krang = new Krang::Hardware((Krang::Hardware::Mode)hw_mode, &daemon_cx, robot,
+                              filter_imu);
 
   // Create a thread that processes keyboard inputs when keys are pressed
   KbShared kb_shared;  ///< info shared by keyboard thread here
@@ -186,6 +185,11 @@ int main(int argc, char* argv[]) {
   torso_state.mode = TorsoState::kStop;
   Somatic__WaistMode waist_mode;
   BalanceControl balance_control(krang, robot, params);
+  for (int i = 0; i < robot->getNumBodyNodes(); i++) {
+    dart::dynamics::BodyNodePtr body = robot->getBodyNode(i);
+    std::cout << body->getName() << ": " << body->getMass() << " ";
+    std::cout << body->getLocalCOM().transpose() << std::endl;
+  }
 
   // Flag to enable wheel control. Control inputs are not sent to the wheels
   // until this flag is set
@@ -246,7 +250,8 @@ int main(int argc, char* argv[]) {
              << control_input[0] << " " << control_input[1] << " "
              << balance_control.get_pd_gains().transpose() << " "
              << robot->getMass() - 2 * robot->getBodyNode("LWheel")->getMass()
-             << " " << balance_control.get_com().transpose() << std::endl;
+             << " " << balance_control.get_com().transpose() << " "
+             << robot->getPositions().transpose() << std::endl;
 
     // Print the mode
     if (debug) {
