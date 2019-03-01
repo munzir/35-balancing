@@ -57,5 +57,7 @@
 
 # data
 !/data/
-/data/
+/data/*
 !/data/equilibrium.m
+!/data/eso_gains.m
+!/data/*.fig
