@@ -288,7 +288,7 @@ void BalanceControl::ComputeCurrent(const Eigen::Matrix<double, 6, 1>& pd_gain,
     u << 2 * (u_x_ + u_theta_);
     eso_beta_->update(state_(0), b, u, dt_);
 
-    //eso_compensation_(0) = -eso_th_com_->getState()(2) / B_(1) -
+    // eso_compensation_(0) = -eso_th_com_->getState()(2) / B_(1) -
     //                    eso_th_wheel_->getState()(2) / B_(3);
     // Akash made these edits for testing different forms of
     // alpha
@@ -302,11 +302,11 @@ void BalanceControl::ComputeCurrent(const Eigen::Matrix<double, 6, 1>& pd_gain,
   control_input[0] =
       std::max(-max_input_current_,
                std::min(max_input_current_,
-                        u_theta_ + u_x_ + eso_compensation/2.0 + u_spin_));
+                        u_theta_ + u_x_ + eso_compensation / 2.0 + u_spin_));
   control_input[1] =
       std::max(-max_input_current_,
                std::min(max_input_current_,
-                        u_theta_ + u_x_ + eso_compensation/2.0 - u_spin_));
+                        u_theta_ + u_x_ + eso_compensation / 2.0 - u_spin_));
 }
 
 //============================================================================
@@ -322,7 +322,9 @@ Eigen::MatrixXd BalanceControl::ComputeLqrGains() {
     params.gear_ratio = 1;
     params.wheel_radius = 0.25;
   } else {
-    params.rotor_inertia = 0.0;
+    const double kKilogramMeterSquaredPerOunceInchSecondSquared = 0.00706154;
+    params.rotor_inertia =
+        0.022656 * kKilogramMeterSquaredPerOunceInchSecondSquared;
     params.gear_ratio = 15;
     params.wheel_radius = 0.25;
   }
@@ -344,7 +346,8 @@ Eigen::MatrixXd BalanceControl::ComputeLqrGains() {
     // TODO: LQR gains were calculated with only single wheel torque
     // They should be halved to divide between two wheels.
     // This may end up having to find lqr_hack_ratios_
-    LQR_Gains = lqr_hack_ratios_ * LQR_Gains;
+    // LQR_Gains = lqr_hack_ratios_ * LQR_Gains;
+    LQR_Gains = 0.5 * LQR_Gains;
   }
 
   return LQR_Gains;
