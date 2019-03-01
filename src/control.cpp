@@ -52,6 +52,7 @@
 #include <Eigen/Eigen>  // Eigen:: MatrixXd, VectorXd, Vector3d, Matrix<double, #, #>
 #include <dart/dart.hpp>             // dart::dynamics::SkeletonPtr
 #include <kore.hpp>                  // Krang::Hardware
+#include <krang-utils/eso.hpp>       // Eso
 #include <krang-utils/file_ops.hpp>  // readInputFileAsMatrix()
 #include <krang-utils/linearize_wip.hpp>  // linearize_wip::ComputeLinearizedDynamics()
 #include <krang-utils/lqr.hpp>            // lqr()
@@ -118,6 +119,9 @@ BalanceControl::BalanceControl(Krang::Hardware* krang,
   joystick_forw = 0.0;
   joystick_spin = 0.0;
 
+  // B in the linearized system (A, B)
+  B_ = Eigen::MatrixXd::Zero(4, 1);
+
   // LQR Hack Ratios
   Eigen::VectorXd lqrGains = Eigen::VectorXd::Zero(4);
   lqr_hack_ratios_ = Eigen::Matrix<double, 4, 4>::Identity();
@@ -144,6 +148,17 @@ BalanceControl::BalanceControl(Krang::Hardware* krang,
 
   // time
   t_prev_ = aa_tm_now();
+
+  // observer gains
+  adrc_ = params.adrc_;
+  eso_th_com_ = NULL;
+  eso_th_wheel_ = NULL;
+  eso_beta_ = NULL;
+  if (adrc_) {
+    observer_gains_th_com_ = params.observer_gains_th_com_;
+    observer_gains_th_wheel_ = params.observer_gains_th_wheel_;
+    observer_gains_beta_ = params.observer_gains_beta_;
+  }
 }
 
 //============================================================================
@@ -186,7 +201,7 @@ void BalanceControl::UpdateState() {
 
   // Making adjustment in com to make it consistent with the hack above for
   // state(0)
-  //com_(0) = com_(2) * tan(state_(0));
+  // com_(0) = com_(2) * tan(state_(0));
 }
 
 //============================================================================
@@ -256,22 +271,48 @@ void BalanceControl::ComputeCurrent(const Eigen::Matrix<double, 6, 1>& pd_gain,
       -pd_gain.bottomLeftCorner<2, 1>().dot(error.bottomLeftCorner<2, 1>());
   u_spin_ = std::max(-30.0, std::min(30.0, u_spin_));
 
+  double eso_compensation = 0.0;
+  if (adrc_ && eso_th_com_ != NULL) {
+    Eigen::Vector3d b;
+    Eigen::Matrix<double, 1, 1> u;
+
+    b << 0.0, B_(1), 0.0;
+    u << 2 * u_theta_;
+    eso_th_com_->update(state_(0), b, u, dt_);
+
+    b << 0.0, B_(3), 0.0;
+    u << 2 * u_x_;
+    eso_th_wheel_->update(state_(2), b, u, dt_);
+
+    b << 0.0, B_(1), 0.0;
+    u << 2 * (u_x_ + u_theta_);
+    eso_beta_->update(state_(0), b, u, dt_);
+
+    //eso_compensation_(0) = -eso_th_com_->getState()(2) / B_(1) -
+    //                    eso_th_wheel_->getState()(2) / B_(3);
+    // Akash made these edits for testing different forms of
+    // alpha
+    eso_compensation_(0) = eso_th_com_->getState()(2) / B_(1);
+    eso_compensation_(1) = -eso_beta_->getState()(2) / B_(1);
+
+    eso_compensation = eso_compensation_(0) + eso_compensation_(1);
+  }
+
   // Calculate current for the wheels
   control_input[0] =
       std::max(-max_input_current_,
-               std::min(max_input_current_, u_theta_ + u_x_ + u_spin_));
+               std::min(max_input_current_,
+                        u_theta_ + u_x_ + eso_compensation/2.0 + u_spin_));
   control_input[1] =
       std::max(-max_input_current_,
-               std::min(max_input_current_, u_theta_ + u_x_ - u_spin_));
+               std::min(max_input_current_,
+                        u_theta_ + u_x_ + eso_compensation/2.0 - u_spin_));
 }
 
 //============================================================================
 Eigen::MatrixXd BalanceControl::ComputeLqrGains() {
   // TODO: Get rid of dynamic allocation
   Eigen::MatrixXd A = Eigen::MatrixXd::Zero(4, 4);
-  Eigen::MatrixXd B = Eigen::MatrixXd::Zero(4, 1);
-  Eigen::VectorXd B_thWheel = Eigen::VectorXd::Zero(3);
-  Eigen::VectorXd B_thCOM = Eigen::VectorXd::Zero(3);
   Eigen::VectorXd LQR_Gains = Eigen::VectorXd::Zero(4);
 
   // Find linearized model of the WIP
@@ -285,13 +326,14 @@ Eigen::MatrixXd BalanceControl::ComputeLqrGains() {
     params.gear_ratio = 15;
     params.wheel_radius = 0.25;
   }
-  linearize_wip::ComputeLinearizedDynamics(krang_->robot, params, A, B);
+  linearize_wip::ComputeLinearizedDynamics(krang_->robot, params, A, B_);
 
   // Apply lqr on the linearized model
-  lqr(A, B, lqrQ_, lqrR_, LQR_Gains);
+  lqr(A, B_, lqrQ_, lqrR_, LQR_Gains);
 
   const double motor_constant = 12.0 * 0.00706;
   const double gear_ratio = 15;
+  B_ = B_ * gear_ratio * motor_constant;
   LQR_Gains /= (gear_ratio * motor_constant);
   if (is_simulation_) {
     // LQR gains are calculated using a model that has one wheel
@@ -306,6 +348,34 @@ Eigen::MatrixXd BalanceControl::ComputeLqrGains() {
   }
 
   return LQR_Gains;
+}
+
+//============================================================================
+void BalanceControl::CreateEsos() {
+  // If they exist already, start them anew
+  DeleteEsos();
+
+  // Create eso for th_com
+  Eigen::Vector3d x0;
+  x0 << state_(0), state_(1), 0.0;
+  eso_th_com_ = new Eso(x0, observer_gains_th_com_);
+
+  // Create eso for th_wheel
+  x0 << state_(2), state_(3), 0.0;
+  eso_th_wheel_ = new Eso(x0, observer_gains_th_wheel_);
+
+  // Create eso for beta
+  x0 << state_(0), state_(1), 0.0;
+  eso_beta_ = new Eso(x0, observer_gains_beta_);
+}
+
+//============================================================================
+void BalanceControl::DeleteEsos() {
+  std::cout << "deleting esos ..." << std::endl;
+  if (eso_th_com_) delete eso_th_com_;
+  if (eso_th_wheel_) delete eso_th_wheel_;
+  if (eso_beta_) delete eso_beta_;
+  std::cout << "done ..." << std::endl;
 }
 
 //============================================================================
@@ -515,6 +585,7 @@ void BalanceControl::StandSitEvent() {
         state_(0) > start_bal_threshold_lo_ * M_PI / 180.0) {
       balance_mode_ = BalanceControl::STAND;
       CancelPositionBuiltup();
+      if (adrc_) CreateEsos();
       std::cout << "[MODE] STAND" << std::endl;
     } else {
       std::cout << "[ERR ] Can't stand up!! Bal error too high" << std::endl;

@@ -91,6 +91,12 @@ struct BalancingConfig {
   bool is_simulation_;
   double sim_dt_;
   double sim_max_input_current_;
+
+  // Eso gains
+  bool adrc_;
+  Eigen::Vector3d observer_gains_th_com_;
+  Eigen::Vector3d observer_gains_th_wheel_;
+  Eigen::Vector3d observer_gains_beta_;
 };
 
 // Function for reading configuration parameters. First argument is the location

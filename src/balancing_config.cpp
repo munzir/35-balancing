@@ -133,10 +133,14 @@ void ReadConfigParams(const char* config_file, BalancingConfig* params) {
     std::cout << "imuSitAngle :" << params->imuSitAngle << std::endl;
     params->toBalThreshold = cfg->lookupFloat(scope, "toBalThreshold");
     std::cout << "toBalThreshold :" << params->toBalThreshold << std::endl;
-    params->startBalThresholdLo = cfg->lookupFloat(scope, "startBalThresholdLo");
-    std::cout << "startBalThresholdLo :" << params->startBalThresholdLo << std::endl;
-    params->startBalThresholdHi = cfg->lookupFloat(scope, "startBalThresholdHi");
-    std::cout << "startBalThresholdHi :" << params->startBalThresholdHi << std::endl;
+    params->startBalThresholdLo =
+        cfg->lookupFloat(scope, "startBalThresholdLo");
+    std::cout << "startBalThresholdLo :" << params->startBalThresholdLo
+              << std::endl;
+    params->startBalThresholdHi =
+        cfg->lookupFloat(scope, "startBalThresholdHi");
+    std::cout << "startBalThresholdHi :" << params->startBalThresholdHi
+              << std::endl;
 
     // Halt arm to stop
     params->manualArmLockUnlock =
@@ -146,8 +150,45 @@ void ReadConfigParams(const char* config_file, BalancingConfig* params) {
 
     // Max input current in simulation mode
     if (params->is_simulation_) {
-      params->sim_max_input_current_ = cfg->lookupFloat(scope, "maxInputCurrent");
-      std::cout << "maxInputCurrent: " << params->sim_max_input_current_ << std::endl;
+      params->sim_max_input_current_ =
+          cfg->lookupFloat(scope, "maxInputCurrent");
+      std::cout << "maxInputCurrent: " << params->sim_max_input_current_
+                << std::endl;
+    }
+
+    // ADRC?
+    params->adrc_ = cfg->lookupBoolean(scope, "adrc");
+    std::cout << "adrc: " << (params->adrc_ ? "true" : "false")
+              << std::endl;
+
+    if (params->adrc_) {
+      // eso observer gains for th_com
+      params->observer_gains_th_com_.setZero();
+      str = cfg->lookupString(scope, "observer_gains_th_com");
+      stream.str(str);
+      for (int i = 0; i < 3; i++) stream >> params->observer_gains_th_com_(i);
+      stream.clear();
+      std::cout << "observer_gains_th_com: "
+                << params->observer_gains_th_com_.transpose() << std::endl;
+
+      // eso observer gains for th_wheel
+      params->observer_gains_th_wheel_.setZero();
+      str = cfg->lookupString(scope, "observer_gains_th_wheel");
+      stream.str(str);
+      for (int i = 0; i < 3; i++) stream >> params->observer_gains_th_wheel_(i);
+      stream.clear();
+      std::cout << "observer_gains_th_wheel: "
+                << params->observer_gains_th_wheel_.transpose() << std::endl;
+
+      // eso observer gains for beta
+      params->observer_gains_beta_.setZero();
+      str = cfg->lookupString(scope, "observer_gains_beta");
+      stream.str(str);
+      for (int i = 0; i < 3; i++) stream >> params->observer_gains_beta_(i);
+      stream.clear();
+      std::cout << "observer_gains_beta: "
+                << params->observer_gains_beta_.transpose() << std::endl;
+
     }
 
   } catch (const config4cpp::ConfigurationException& ex) {

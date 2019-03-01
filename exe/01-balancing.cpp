@@ -251,7 +251,8 @@ int main(int argc, char* argv[]) {
              << balance_control.get_pd_gains().transpose() << " "
              << robot->getMass() - 2 * robot->getBodyNode("LWheel")->getMass()
              << " " << balance_control.get_com().transpose() << " "
-             << robot->getPositions().transpose() << std::endl;
+             << robot->getPositions().transpose() << " "
+             << balance_control.get_eso_compensation().transpose() << std::endl;
 
     // Print the mode
     if (debug) {
@@ -259,6 +260,7 @@ int main(int argc, char* argv[]) {
       std::cout << "Interface: "
                 << (params.is_simulation_ ? "simulation" : "hardware");
       balance_control.Print();
+      std::cout << "torque: " << control_input[0] << std::endl;
       std::cout << "time: " << time << std::endl;
       if (start) std::cout << "Started..." << std::endl;
     }

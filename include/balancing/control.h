@@ -44,9 +44,10 @@
 #ifndef KRANG_BALANCING_CONTROL_H_
 #define KRANG_BALANCING_CONTROL_H_
 
-#include <Eigen/Eigen>    // Eigen::MatrixXd, Eigen::Matrix<double, #, #>
-#include <dart/dart.hpp>  // dart::dynamics::SkeletonPtr
-#include <kore.hpp>       // Krang::Hardware
+#include <Eigen/Eigen>          // Eigen::MatrixXd, Eigen::Matrix<double, #, #>
+#include <dart/dart.hpp>        // dart::dynamics::SkeletonPtr
+#include <kore.hpp>             // Krang::Hardware
+#include <krang-utils/eso.hpp>  // Eso
 
 #include "balancing_config.h"  // BalancingConfig
 
@@ -54,7 +55,7 @@ class BalanceControl {
  public:
   BalanceControl(Krang::Hardware* krang_, dart::dynamics::SkeletonPtr robot_,
                  BalancingConfig& params);
-  ~BalanceControl() {}
+  ~BalanceControl() { DeleteEsos(); }
 
   // The states of our state machine. We use the name "mode" instead of "state"
   // because state is already being used to name the state of the wheeled
@@ -120,6 +121,7 @@ class BalanceControl {
   Eigen::Matrix<double, 6, 1> get_pd_gains() const { return pd_gains_; }
   Eigen::Matrix<double, 6, 1> get_state() const { return state_; }
   Eigen::Matrix<double, 3, 1> get_com() const { return com_; }
+  Eigen::Vector2d get_eso_compensation() const { return eso_compensation_; }
 
  private:
   // Set parameters in the model used to compute CoM
@@ -144,8 +146,13 @@ class BalanceControl {
   // of the simplified robot (i.e. the wheeled inverted pendulum) and then
   // computes the LQR gains on the linearized dynamics using costs lqrQ_ and
   // lqrR_ to return a 4-element vector comprising the LQR gains for theta,
-  // dtheta, x, dx respectively
+  // dtheta, x, dx respectively. param B returns the B vector of the linearized
+  // (A,B) system
   Eigen::MatrixXd ComputeLqrGains();
+
+  // Create/delete ESOs
+  void CreateEsos();
+  void DeleteEsos();
 
  private:
   BalanceMode balance_mode_;  // Current mode of the state machine
@@ -186,5 +193,14 @@ class BalanceControl {
   bool is_simulation_;
   double max_input_current_;
   const double kMaxInputCurrentHardware = 49.0;
+
+  bool adrc_;
+  Eso *eso_th_com_, *eso_th_wheel_, *eso_beta_;
+  Eigen::Vector3d observer_gains_th_com_, observer_gains_th_wheel_,
+      observer_gains_beta_;
+
+  // B in the linearized system (A, B)
+  Eigen::MatrixXd B_;
+  Eigen::Vector2d eso_compensation_;
 };
 #endif  // KRANG_BALANCING_CONTROL_H_
