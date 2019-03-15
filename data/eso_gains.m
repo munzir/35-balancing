@@ -9,5 +9,6 @@ eps = sqrt(log(percent_OS)^2/(pi^2+log(percent_OS)^2));
 t_2p = 0.25;
 w_n = 4/(t_2p*eps);
 r1 = roots([1, 2*eps*w_n, w_n^2]);
-L_1 = place(A_',C_',[-100*2*pi,r1'])';
+r1
+L_1 = place(A_',C_',[-0.001*2*pi,r1'])';
 L_1'

@@ -1,7 +1,8 @@
 close all;
 
-data_sim = dlmread('/usr/local/share/krang-sim-ach/out');
-data_bal = dlmread('/usr/local/share/krang/balancing/out');
+%data_sim = dlmread('/usr/local/share/krang-sim-ach/out');
+% data_bal = dlmread('hardware-lqr-only-beta128-03011711');
+data_bal = dlmread('hardware-adrc-beta128-03011716');
 
 km = 12.0/141.61; % Nm/A
 GR = 15.0;
@@ -25,22 +26,27 @@ mass = data_bal(:,16);
 com_est_x = data_bal(:,17);
 com_est_y = data_bal(:,18);
 com_est_z = data_bal(:,19);
+positions_bal = data_bal(:,20:43);
 alpha_eso = data_bal(:,44);
 beta_eso = data_bal(:,45);
 
-com_x = data_sim(:, 2);
-com_y = data_sim(:, 3);
-com_z = data_sim(:, 4);
+
+% com_x = data_sim(:, 2);
+% com_y = data_sim(:, 3);
+% com_z = data_sim(:, 4);
 
 g = 9.8;
 l = (com_est_x.^2 + com_est_z.^2).^0.5;
-tau_disturb = mass.*g.*(com_x-com_est_x);
-th_com_true = atan2(com_x, com_z);
+% tau_disturb = mass.*g.*(com_x-com_est_x);
+% th_com_true = atan2(com_x, com_z);
 
 figure;
 subplot(3,1,1);
-plot(time, mass.*g.*l.*sin(th_com), time, -tau_disturb + tau_l + tau_r, time, tau_l + tau_r); 
-legend({'$$mgl \sin(\theta_{com})$$', '$$-\tau_{disturb} + \tau$$', '$$\tau$$'}, 'Interpreter', 'latex');
+% plot(time, mass.*g.*l.*sin(th_com), time, -tau_disturb + tau_l + tau_r, time, tau_l + tau_r); 
+% legend({'$$mgl \sin(\theta_{com})$$', '$$-\tau_{disturb} + \tau$$', '$$\tau$$'}, 'Interpreter', 'latex');
+plot(time, mass.*g.*l.*sin(th_com), time, tau_l, time, tau_r, time, tau_r+tau_l, ...
+    time, alpha_eso, time, beta_eso); 
+legend({'$$mgl \sin(\theta_{com})$$', '$$\tau_L$$', '$$\tau_R$$', '$$\tau_L + \tau_R$$', '$$\alpha_{eso}$$', '$$\beta_{eso}$$'}, 'Interpreter', 'latex');
 grid on;
 
 subplot(3,1,2);
@@ -60,8 +66,11 @@ legend({'$$\tau$$', '$$K_{\theta com} \theta_{com}$$', ...
 grid on;
 
 subplot(3,1,3);
-plot(time, th_wheel, time, -K_th_com./K_th_wheel.*th_com, time, th_com_true*180.0/pi, time, alpha_eso, time, beta_eso); 
-legend({'$$\theta_{wheel}$$', '$$-K_{\theta com} \theta_{com} / K_{\theta wh}$$', '$$\theta_{com}^{true}$$', '$$\alpha_{eso}$$', '$$\beta_{eso}$$'}, ...
+% plot(time, th_wheel, time, -K_th_com./K_th_wheel.*th_com, time, th_com_true*180.0/pi, time, alpha_eso, time, beta_eso); 
+% legend({'$$\theta_{wheel}$$', '$$-K_{\theta com} \theta_{com} / K_{\theta wh}$$', '$$\theta_{com}^{true}$$', '$$\alpha_{eso}$$', '$$\beta_{eso}$$'}, ...
+%     'Interpreter', 'latex');
+plot(time, th_wheel, time, -K_th_com./K_th_wheel.*th_com, time, positions_bal(:,9)); 
+legend({'$$\theta_{wheel}$$', '$$-K_{\theta com} \theta_{com} / K_{\theta wh}$$', '$$q_{waist}$$'}, ...
     'Interpreter', 'latex');
 grid on;
 
