@@ -68,8 +68,9 @@ BalanceControl::BalanceControl(Krang::Hardware* krang,
                                dart::dynamics::SkeletonPtr robot,
                                BalancingConfig& params)
     : krang_(krang), robot_(robot), is_simulation_(params.is_simulation_) {
-  // if in simulation mode dt = sim_dt
-  if (is_simulation_) dt_ = params.sim_dt_;
+  // if in simulation mode dt = sim_dt, if not then 0.001 only until first
+  // iteration begins
+  dt_ = (is_simulation_? params.sim_dt_ : 0.01);
 
   // Define max input current based on simulation mode or not
   max_input_current_ = (is_simulation_ ? params.sim_max_input_current_
@@ -109,6 +110,7 @@ BalanceControl::BalanceControl(Krang::Hardware* krang,
   start_bal_threshold_lo_ = params.startBalThresholdLo;
   start_bal_threshold_hi_ = params.startBalThresholdHi;
   imu_sit_angle_ = params.imuSitAngle;
+  waist_hi_lo_threshold_ = params.waistHiLoThreshold;
 
   // Initial values
   balance_mode_ = BalanceControl::GROUND_LO;
@@ -122,14 +124,6 @@ BalanceControl::BalanceControl(Krang::Hardware* krang,
   // B in the linearized system (A, B)
   B_ = Eigen::MatrixXd::Zero(4, 1);
 
-  // LQR Hack Ratios
-  Eigen::VectorXd lqrGains = Eigen::VectorXd::Zero(4);
-  lqr_hack_ratios_ = Eigen::Matrix<double, 4, 4>::Identity();
-  lqrGains = BalanceControl::ComputeLqrGains();
-  for (int i = 0; i < lqr_hack_ratios_.cols(); i++) {
-    lqr_hack_ratios_(i, i) =
-        pd_gains_list_[BalanceControl::STAND](i) / -lqrGains(i);
-  }
 
   // Read CoM estimation model paramters
   if (strlen(params.comParametersPath) != 0) {
@@ -158,6 +152,18 @@ BalanceControl::BalanceControl(Krang::Hardware* krang,
     observer_gains_th_com_ = params.observer_gains_th_com_;
     observer_gains_th_wheel_ = params.observer_gains_th_wheel_;
     observer_gains_beta_ = params.observer_gains_beta_;
+  }
+
+  // To correctly do ComputeLqrGains()
+  UpdateState();
+
+  // LQR Hack Ratios
+  Eigen::VectorXd lqrGains = Eigen::VectorXd::Zero(4);
+  lqr_hack_ratios_ = Eigen::Matrix<double, 4, 4>::Identity();
+  lqrGains = BalanceControl::ComputeLqrGains();
+  for (int i = 0; i < lqr_hack_ratios_.cols(); i++) {
+    lqr_hack_ratios_(i, i) =
+        pd_gains_list_[BalanceControl::STAND](i) / -lqrGains(i);
   }
 }
 
@@ -333,10 +339,14 @@ Eigen::MatrixXd BalanceControl::ComputeLqrGains() {
   // Apply lqr on the linearized model
   lqr(A, B_, lqrQ_, lqrR_, LQR_Gains);
 
-  const double motor_constant = 12.0 * 0.00706;
+  //const double motor_constant = 12.0 * 0.00706;
+  // Akash made the following edit because the conversion value is more accurate
+  const double motor_constant = 12.0 * 0.00706155183333;
+
   const double gear_ratio = 15;
   B_ = B_ * gear_ratio * motor_constant;
   LQR_Gains /= (gear_ratio * motor_constant);
+
   if (is_simulation_) {
     // LQR gains are calculated using a model that has one wheel
     // The torque needs to be distributed to either wheel, so needs
@@ -346,8 +356,8 @@ Eigen::MatrixXd BalanceControl::ComputeLqrGains() {
     // TODO: LQR gains were calculated with only single wheel torque
     // They should be halved to divide between two wheels.
     // This may end up having to find lqr_hack_ratios_
-    // LQR_Gains = lqr_hack_ratios_ * LQR_Gains;
     LQR_Gains = 0.5 * LQR_Gains;
+    LQR_Gains = lqr_hack_ratios_ * LQR_Gains;
   }
 
   return LQR_Gains;
@@ -375,9 +385,9 @@ void BalanceControl::CreateEsos() {
 //============================================================================
 void BalanceControl::DeleteEsos() {
   std::cout << "deleting esos ..." << std::endl;
-  if (eso_th_com_) delete eso_th_com_;
-  if (eso_th_wheel_) delete eso_th_wheel_;
-  if (eso_beta_) delete eso_beta_;
+  if (eso_th_com_) { delete eso_th_com_; eso_th_com_ = NULL; }
+  if (eso_th_wheel_) { delete eso_th_wheel_; eso_th_wheel_ = NULL; }
+  if (eso_beta_) { delete eso_beta_; eso_beta_ = NULL; }
   std::cout << "done ..." << std::endl;
 }
 
@@ -415,7 +425,7 @@ void BalanceControl::BalancingController(double* control_input) {
       // State Transition - If the waist has been opened too much switch to
       // GROUND_HI mode
       if ((krang_->waist->pos[0] - krang_->waist->pos[1]) / 2.0 <
-          150.0 * M_PI / 180.0) {
+          waist_hi_lo_threshold_ * M_PI / 180.0) {
         balance_mode_ = BalanceControl::GROUND_HI;
       }
 
@@ -438,10 +448,10 @@ void BalanceControl::BalancingController(double* control_input) {
       BalanceControl::ComputeCurrent(pd_gains_, error_, &control_input[0]);
 
       // State Transitions
-      // If in ground Hi mode and waist angle decreases below 150.0 goto
+      // If in ground Hi mode and waist angle decreases below waist_hi_lo_threshold_ goto
       // groundLo mode
       if ((krang_->waist->pos[0] - krang_->waist->pos[1]) / 2.0 >
-          150.0 * M_PI / 180.0) {
+          waist_hi_lo_threshold_ * M_PI / 180.0) {
         balance_mode_ = BalanceControl::GROUND_LO;
       }
       break;
@@ -560,7 +570,7 @@ void BalanceControl::BalancingController(double* control_input) {
 void BalanceControl::Print() {
   std::cout << "\nstate: " << state_.transpose() << std::endl;
   std::cout << "com: " << com_.transpose() << std::endl;
-  std::cout << "WAIST ANGLE: " << krang_->waist->pos[0] << std::endl;
+  std::cout << "WAIST ANGLE: " << krang_->waist->pos[0]*180.0/3.14 << std::endl;
   std::cout << "js_forw: " << joystick_forw;
   std::cout << ", js_spin: " << joystick_spin << std::endl;
   std::cout << "refState: " << ref_state_.transpose() << std::endl;
@@ -599,8 +609,9 @@ void BalanceControl::StandSitEvent() {
   else if (balance_mode_ == BalanceControl::STAND ||
            balance_mode_ == BalanceControl::BAL_LO) {
     if ((krang_->waist->pos[0] - krang_->waist->pos[1]) / 2.0 >
-        150.0 * M_PI / 180.0) {
+        waist_hi_lo_threshold_ * M_PI / 180.0) {
       balance_mode_ = BalanceControl::SIT;
+      DeleteEsos();
       std::cout << "[MODE] SIT " << std::endl;
     } else {
       std::cout << "[ERR ] Can't sit down, Waist is too high! " << std::endl;
